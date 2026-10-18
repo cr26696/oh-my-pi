@@ -1,6 +1,6 @@
 # Autonomous Memory
 
-omp supports five memory modes. Memory is disabled by default; select one backend via `/settings` or `config.yml`:
+omp supports six memory modes. Memory is disabled by default; select one backend via `/settings` or `config.yml`:
 
 | `memory.backend` | Storage and behavior                                                   | Guide                                                   |
 | ---------------- | ---------------------------------------------------------------------- | ------------------------------------------------------- |
@@ -9,6 +9,7 @@ omp supports five memory modes. Memory is disabled by default; select one backen
 | `hindsight`      | Remote, bank-scoped Hindsight memory                                   | [Hindsight](#hindsight-remote-backend)                  |
 | `mnemopi`        | Local Mnemopi SQLite memory                                            | [Mnemopi memory backend](./mnemosyne-memory-backend.md) |
 | `sharpshooter`   | Friction-gated project decision files (architecture/product/style), consolidated in the background | [Sharpshooter](#sharpshooter-backend) |
+| `rs-mem-one`     | Local SQLite TRG knowledge graph served by the `rs-mem-one` CLI          | [RS-Mem-One memory backend](./rs-mem-one-memory-backend.md) |
 
 Enable the local summary pipeline:
 
@@ -40,10 +41,11 @@ The agent can read memory files directly using `memory://` URLs with the `read` 
 | `memory://root/learned.md`             | Lessons captured by the `learn` tool |
 | `memory://root/skills/<name>/SKILL.md` | A generated skill playbook           |
 | `memory://<memory-id>`                 | Full Mnemopi memory row (working or episodic) with a YAML frontmatter metadata header; only available when `memory.backend` is `mnemopi` |
+| `memory://<node-id>`                   | Full RS-Mem-One graph node with a YAML frontmatter metadata header; only available when `memory.backend` is `rs-mem-one` |
 
 The `memory://<memory-id>` form returns the full stored row rather than the clipped recall preview (recall content that exceeds the preview cap ends with a trailing `…`); agents are instructed to read it before any `memory_edit update`.
 
-The `memory://root[/…]` rows are file-backed and only exist with `memory.backend: local`, which populates the on-disk memory root via the consolidation pipeline. Under `hindsight` or `mnemopi` the root is never written, so those URLs do not resolve — use `recall`/`reflect` (and `read memory://<memory-id>` on `mnemopi`) instead.
+The `memory://root[/…]` rows are file-backed and only exist with `memory.backend: local`, which populates the on-disk memory root via the consolidation pipeline. Under `hindsight`, `mnemopi`, or `rs-mem-one` the root is never written, so those URLs do not resolve — use `recall`/`reflect` (and `read memory://<memory-id>` or `memory://<node-id>` on the backend that owns ids) instead.
 
 ### `/memory` slash command
 
@@ -179,9 +181,14 @@ sharpshooter:
 | `sharpshooter.intervalMinutes`     | `5`        | Minimum minutes between consolidation runs                                                                                                                                                                                  |
 | `sharpshooter.injectionTokenLimit` | `15000`    | Approximate token cap for the decision files injected into the system prompt                                                                                                                                                |
 
+## RS-Mem-One backend
+
+`memory.backend: rs-mem-one` delegates long-term memory to the local `rs-mem-one` CLI (the renamed `jev-mem-cli`). By default omp keeps one resident `rs-mem-one serve` process per session (JSONL over stdin/stdout), so SQLite, HTTP clients and the Jev decision cache are reused across recall, retain, stats and `memory://` reads. omp owns the first-turn recall, native `recall`/`retain`/`reflect` tools, compaction context and `memory://<node-id>` reads; the CLI owns the SQLite graph, embeddings and relation judging. See [RS-Mem-One memory backend](./rs-mem-one-memory-backend.md) for settings and limitations.
+
 ## Key files
 
 - `packages/coding-agent/src/memories/index.ts` — pipeline orchestration, injection, clear/enqueue entry points (the `/memory` command routes here via `packages/coding-agent/src/memory-backend/local-backend.ts`)
 - `packages/coding-agent/src/memories/storage.ts` — SQLite-backed job queue and thread registry
 - `packages/coding-agent/src/prompts/memories/` — memory prompt templates
+- `packages/coding-agent/src/rsmem/` — RS-Mem-One backend, state and CLI transport
 - `packages/coding-agent/src/internal-urls/memory-protocol.ts` — `memory://` URL handler

@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { getAgentDir, isEnoent, withLoopPhase } from "@oh-my-pi/pi-utils";
 import { getMemoryRoot } from "../memories";
 import { getMnemopiSessionState, type MnemopiScopedMemoryHit, type MnemopiSessionState } from "../mnemopi/state";
+import { getRsmemSessionState, type RsmemSessionState, type RsmemStoredNode } from "../rsmem/state";
 import memoryDoc from "../prompts/internal-urls/memory.md" with { type: "text" };
 import { AgentRegistry } from "../registry/agent-registry";
 import type { AgentSession } from "../session/agent-session";
@@ -173,6 +174,17 @@ function mnemopiSessionStatesFromRegistry(): MnemopiSessionState[] {
 	return states;
 }
 
+function rsmemSessionStatesFromRegistry(): RsmemSessionState[] {
+	const states: RsmemSessionState[] = [];
+	for (const ref of AgentRegistry.global().list()) {
+		const session = ref.session;
+		if (!session) continue;
+		const state = getRsmemSessionState(session);
+		if (state && !state.disposed) states.push(state);
+	}
+	return states;
+}
+
 function memoryBackendFromContext(context?: ResolveContext): string | undefined {
 	return context?.settings ? cfgMemoryBackend.get(context.settings) : undefined;
 }
@@ -240,7 +252,7 @@ function callerMnemopiState(session: AgentSession): MnemopiSessionState | undefi
 
 function unknownNamespaceError(namespace: string): Error {
 	return new Error(
-		`Unknown memory namespace: ${namespace}. Supported: ${MEMORY_NAMESPACE} (file-backed memory summary), or a mnemopi memory id when memory.backend=mnemopi is active.`,
+		`Unknown memory namespace: ${namespace}. Supported: ${MEMORY_NAMESPACE} (file-backed memory summary), or a mnemopi/rs-mem-one memory id when that backend is active.`,
 	);
 }
 
@@ -261,9 +273,11 @@ function fileBackedRootUnavailableError(backend: string | undefined): Error {
 	const searchHint =
 		backend === "mnemopi"
 			? " Use `recall`/`reflect` to search Mnemopi memories, or `read memory://<memory-id>` for a full row."
-			: backend === "hindsight"
-				? " Use `recall`/`reflect` to search Hindsight memories."
-				: "";
+			: backend === "rs-mem-one"
+				? " Use `recall`/`reflect` to search RS-Mem-One evidence, or `read memory://<node-id>` for a full node."
+				: backend === "hindsight"
+					? " Use `recall`/`reflect` to search Hindsight memories."
+					: "";
 	return new Error(
 		`File-backed memory artifacts only exist with memory.backend=local (active backend: ${backend}).${searchHint}`,
 	);
@@ -277,6 +291,14 @@ function tryResolveMnemopiMemory(id: string): MnemopiScopedMemoryHit | null {
 	for (const state of mnemopiSessionStatesFromRegistry()) {
 		const hit = state?.getScopedMemory(id);
 		if (hit) return hit;
+	}
+	return null;
+}
+
+function tryResolveRsmemMemory(id: string): RsmemStoredNode | null {
+	for (const state of rsmemSessionStatesFromRegistry()) {
+		const node = state.getMemoryById(id);
+		if (node) return node;
 	}
 	return null;
 }
@@ -314,6 +336,26 @@ function renderMnemopiMemory(url: InternalUrl, hit: MnemopiScopedMemoryHit): Int
 			notes: [],
 		};
 	});
+}
+
+function renderRsmemMemory(url: InternalUrl, node: RsmemStoredNode): InternalResource {
+	const metadata = node.metadata == null ? "" : `metadata: ${JSON.stringify(node.metadata)}\n`;
+	const header =
+		"---\n" +
+		`id: ${node.id}\n` +
+		"backend: rs-mem-one\n" +
+		`timestamp: ${node.timestamp}\n` +
+		`created_at: ${node.createdAt}\n` +
+		metadata +
+		"---\n\n";
+	const content = `${header}${node.content}`;
+	return {
+		url: url.href,
+		content,
+		contentType: "text/markdown",
+		size: Buffer.byteLength(content, "utf-8"),
+		notes: [],
+	};
 }
 
 /**
@@ -408,27 +450,34 @@ export class MemoryProtocolHandler implements ProtocolHandler {
 						`Mnemopi memory ${namespace} not found in the calling session's scoped bank. Use \`recall\` to list available ids.`,
 					);
 				}
+				if (backend === "rs-mem-one") {
+					const node = caller.session ? getRsmemSessionState(caller.session)?.getMemoryById(namespace) : null;
+					if (node) return renderRsmemMemory(url, node);
+					throw new Error(`RS-Mem-One node ${namespace} not found. Use \`recall\` to list available node ids.`);
+				}
 				throw unknownNamespaceError(namespace);
 			}
 
 			const mnemopiStates = mnemopiSessionStatesFromRegistry();
+			const rsmemStates = rsmemSessionStatesFromRegistry();
 			const hindsightActive =
 				backend === "hindsight" ||
 				(mnemopiStates.length === 0 &&
+					rsmemStates.length === 0 &&
 					AgentRegistry.global()
 						.list()
 						.some(ref => ref.session?.getHindsightSessionState?.()));
 			if (hindsightActive) {
 				throw new Error(HINDSIGHT_UNADDRESSABLE);
 			}
-			if (mnemopiStates.length === 0) {
+			if (mnemopiStates.length === 0 && rsmemStates.length === 0) {
 				throw unknownNamespaceError(namespace);
 			}
+			const rsmemNode = tryResolveRsmemMemory(namespace);
+			if (rsmemNode) return renderRsmemMemory(url, rsmemNode);
 			const hit = tryResolveMnemopiMemory(namespace);
 			if (hit) return renderMnemopiMemory(url, hit);
-			throw new Error(
-				`Mnemopi memory ${namespace} not found in any scoped bank. Use \`recall\` to list available ids.`,
-			);
+			throw new Error(`Memory ${namespace} not found in any live backend. Use \`recall\` to list available ids.`);
 		}
 
 		// A project may retain files from an earlier local session. Reject known
@@ -480,6 +529,17 @@ export class MemoryProtocolHandler implements ProtocolHandler {
 			completions.push({
 				value: "<memory-id>",
 				description: "Full mnemopi memory by id (from recall)",
+			});
+		}
+		const rsmemAvailable = caller.legacy
+			? rsmemSessionStatesFromRegistry().length > 0
+			: caller.backend === "rs-mem-one" &&
+				caller.session !== undefined &&
+				getRsmemSessionState(caller.session) !== undefined;
+		if (rsmemAvailable) {
+			completions.push({
+				value: "<node-id>",
+				description: "Full RS-Mem-One graph node by id (from recall)",
 			});
 		}
 		return completions;

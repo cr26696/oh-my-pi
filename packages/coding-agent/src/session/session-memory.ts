@@ -9,12 +9,13 @@ import type { HindsightSessionState } from "../hindsight/state";
 import { resolveMemoryBackend } from "../memory-backend/resolve";
 import type { MemoryBackendStartOptions } from "../memory-backend/types";
 import type { MnemopiSessionState } from "../mnemopi/state";
+import { takeRsmemSessionState } from "../rsmem/state";
 import { releaseSharpshooterSession } from "../sharpshooter/backend";
 
 import { cfgMemoryBackend } from "../memory-backend/settings";
 
 /** Id prefixes of the memory backends' own settings; their live edits reconfigure the active backend. */
-const MEMORY_BACKEND_SETTING_PREFIXES: readonly string[] = ["hindsight.", "mnemopi.", "sharpshooter."];
+const MEMORY_BACKEND_SETTING_PREFIXES: readonly string[] = ["hindsight.", "mnemopi.", "sharpshooter.", "rs-mem-one."];
 
 let memorySettings: Derived<Record<string, unknown>> | undefined;
 
@@ -285,6 +286,9 @@ export class SessionMemory {
 				logger.warn("Memory lifecycle: Mnemopi dispose failed", { error: String(error) });
 			}
 		}
+
+		const rsmem = takeRsmemSessionState(this.#host.memoryBackendSession());
+		rsmem?.dispose();
 	}
 
 	/**

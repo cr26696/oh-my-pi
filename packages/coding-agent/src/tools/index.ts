@@ -26,6 +26,7 @@ import { LspTool } from "../lsp";
 import type { MCPManager } from "../mcp";
 import { MEMORY_BACKEND_TOOL_NAMES } from "../memory-backend/tool-names";
 import type { MnemopiSessionState } from "../mnemopi/state";
+import type { RsmemSessionState } from "../rsmem/state";
 import type { PlanModeState } from "../plan-mode/state";
 import type { AgentLifecycleManager } from "../registry/agent-lifecycle";
 import type { AgentRegistry } from "../registry/agent-registry";
@@ -357,6 +358,8 @@ export interface ToolSession {
 	getHindsightSessionState?: () => HindsightSessionState | undefined;
 	/** Get Mnemopi runtime state for this agent session. */
 	getMnemopiSessionState?: () => MnemopiSessionState | undefined;
+	/** Get RS-Mem-One runtime state for this agent session. */
+	getRsmemSessionState?: () => RsmemSessionState | undefined;
 	/** Agent identity used for IRC routing. Returns the registry id (e.g. "Main", "AuthLoader"). */
 	getAgentId?: () => string | null;
 	/** Parent cache identity for sibling sharing, only when the parent model opts in. */
@@ -703,7 +706,7 @@ export async function resolveBuiltinToolPlan(session: ToolSession, toolNames?: s
 		) {
 			requestedTools.push("ast_edit");
 		}
-		if (["hindsight", "mnemopi"].includes(cfgMemoryBackend.get(session.settings))) {
+		if (["hindsight", "mnemopi", "rs-mem-one"].includes(cfgMemoryBackend.get(session.settings))) {
 			for (const name of ["recall", "retain", "reflect"]) {
 				if (!requestedTools.includes(name)) requestedTools.push(name);
 			}
@@ -773,7 +776,7 @@ export async function resolveBuiltinToolPlan(session: ToolSession, toolNames?: s
 			);
 		}
 		if (name === "retain" || name === "recall" || name === "reflect") {
-			return ["hindsight", "mnemopi"].includes(cfgMemoryBackend.get(session.settings));
+			return ["hindsight", "mnemopi", "rs-mem-one"].includes(cfgMemoryBackend.get(session.settings));
 		}
 		if (name === "memory_edit") return cfgMemoryBackend.get(session.settings) === "mnemopi";
 		if (name === "manage_skill")

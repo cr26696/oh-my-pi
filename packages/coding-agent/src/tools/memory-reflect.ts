@@ -5,6 +5,7 @@ import { isHindsightConfigured, loadHindsightConfig } from "../hindsight/config"
 import { ensureBankExists } from "../hindsight/bank";
 import reflectDescription from "../prompts/tools/reflect.md" with { type: "text" };
 import { sessionMemoryToolRefs } from "../memory-backend/tool-names";
+import { formatRsmemEvidence } from "../rsmem/state";
 import type { ToolSession } from ".";
 
 import { cfgMemoryBackend } from "../memory-backend/settings";
@@ -34,7 +35,7 @@ export class MemoryReflectTool implements AgentTool<typeof memoryReflectSchema> 
 
 	static createIf(session: ToolSession): MemoryReflectTool | null {
 		const backend = cfgMemoryBackend.get(session.settings);
-		if (backend !== "hindsight" && backend !== "mnemopi") return null;
+		if (backend !== "hindsight" && backend !== "mnemopi" && backend !== "rs-mem-one") return null;
 		if (backend === "hindsight" && !isHindsightConfigured(loadHindsightConfig(session.settings))) return null;
 		return new MemoryReflectTool(session);
 	}
@@ -42,6 +43,28 @@ export class MemoryReflectTool implements AgentTool<typeof memoryReflectSchema> 
 	async execute(_id: string, params: MemoryReflectParams, signal?: AbortSignal): Promise<AgentToolResult> {
 		return untilAborted(signal, async () => {
 			const backend = cfgMemoryBackend.get(this.session.settings);
+			if (backend === "rs-mem-one") {
+				const state = this.session.getRsmemSessionState?.();
+				if (!state) throw new Error("RS-Mem-One backend is not initialised for this session.");
+				const query = params.context?.trim()
+					? `${params.query.trim()}\n\nAdditional context:\n${params.context.trim()}`
+					: params.query;
+				const evidence = await state.query(query, {
+					topK: state.config.maxEvidence,
+					signal,
+				});
+				if (evidence.length === 0) {
+					return {
+						content: [{ type: "text", text: "No relevant information found to reflect on." }],
+						details: {},
+					};
+				}
+				const body = formatRsmemEvidence(evidence, { includeIds: true });
+				return {
+					content: [{ type: "text", text: `Based on recalled memories:\n\n${body}` }],
+					details: {},
+				};
+			}
 			if (backend === "mnemopi") {
 				const state = this.session.getMnemopiSessionState?.();
 				if (!state) {

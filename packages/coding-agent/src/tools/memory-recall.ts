@@ -5,6 +5,7 @@ import { isHindsightConfigured, loadHindsightConfig } from "../hindsight/config"
 import { formatCurrentTime, formatMemories } from "../hindsight/content";
 import recallDescription from "../prompts/tools/recall.md" with { type: "text" };
 import { sessionMemoryToolRefs } from "../memory-backend/tool-names";
+import { formatRsmemEvidence } from "../rsmem/state";
 import type { ToolSession } from ".";
 
 import { cfgMemoryBackend } from "../memory-backend/settings";
@@ -33,7 +34,7 @@ export class MemoryRecallTool implements AgentTool<typeof memoryRecallSchema> {
 
 	static createIf(session: ToolSession): MemoryRecallTool | null {
 		const backend = cfgMemoryBackend.get(session.settings);
-		if (backend !== "hindsight" && backend !== "mnemopi") return null;
+		if (backend !== "hindsight" && backend !== "mnemopi" && backend !== "rs-mem-one") return null;
 		if (backend === "hindsight" && !isHindsightConfigured(loadHindsightConfig(session.settings))) return null;
 		return new MemoryRecallTool(session);
 	}
@@ -41,6 +42,31 @@ export class MemoryRecallTool implements AgentTool<typeof memoryRecallSchema> {
 	async execute(_id: string, params: MemoryRecallParams, signal?: AbortSignal): Promise<AgentToolResult> {
 		return untilAborted(signal, async () => {
 			const backend = cfgMemoryBackend.get(this.session.settings);
+			if (backend === "rs-mem-one") {
+				const state = this.session.getRsmemSessionState?.();
+				if (!state) throw new Error("RS-Mem-One backend is not initialised for this session.");
+				const evidence = await state.query(params.query, {
+					topK: state.config.maxEvidence,
+					signal,
+				});
+				if (evidence.length === 0) {
+					return {
+						content: [{ type: "text", text: "No relevant memories found." }],
+						details: {},
+						useless: true,
+					};
+				}
+				const body = formatRsmemEvidence(evidence, { includeIds: true });
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Found ${evidence.length} relevant ${evidence.length === 1 ? "memory" : "memories"}:\n\n${body}`,
+						},
+					],
+					details: {},
+				};
+			}
 			if (backend === "mnemopi") {
 				const state = this.session.getMnemopiSessionState?.();
 				if (!state) {

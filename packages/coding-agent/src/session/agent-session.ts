@@ -177,6 +177,7 @@ import type { DaemonCompletionNotification } from "../launch/protocol";
 import { MEMORY_RECALL_CHANGES_MESSAGE_TYPE } from "../memory-backend/recall-entry";
 import { shutdownMnemopiEmbedClient } from "../mnemopi/embed-client";
 import { getMnemopiSessionState, type MnemopiSessionState, setMnemopiSessionState } from "../mnemopi/state";
+import { takeRsmemSessionState } from "../rsmem/state";
 import { MAGIC_KEYWORDS, type MagicKeywordContext, type MagicKeywordId } from "../modes/magic-keywords";
 import { containsMagicKeyword } from "@oh-my-pi/pi-tui/prompt/magic-keywords";
 import { theme } from "@oh-my-pi/pi-tui/theme";
@@ -5961,6 +5962,8 @@ export class AgentSession implements SettingsScope {
 
 		const hindsightState = this.getHindsightSessionState();
 		const mnemopiState = setMnemopiSessionState(this, undefined);
+		const rsmemState = takeRsmemSessionState(this);
+		rsmemState?.dispose();
 		// Bound the wait for a just-fired sharpshooter extraction before dropping
 		// its subscriptions, so print-mode exits don't cut queued-delta writes.
 		const sharpshooterFlushed = flushSharpshooterExtraction(this, options.mnemopiConsolidateTimeoutMs);

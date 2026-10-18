@@ -56,13 +56,44 @@ export class MemoryRetainTool implements AgentTool<MemoryRetainSchema, MemoryRet
 
 	static createIf(session: ToolSession): MemoryRetainTool | null {
 		const backend = cfgMemoryBackend.get(session.settings);
-		if (backend !== "hindsight" && backend !== "mnemopi") return null;
+		if (backend !== "hindsight" && backend !== "mnemopi" && backend !== "rs-mem-one") return null;
 		if (backend === "hindsight" && !isHindsightConfigured(loadHindsightConfig(session.settings))) return null;
 		return new MemoryRetainTool(session);
 	}
 
 	async execute(_id: string, params: MemoryRetainParams): Promise<AgentToolResult<MemoryRetainDetails>> {
 		const backend = cfgMemoryBackend.get(this.session.settings);
+		if (backend === "rs-mem-one") {
+			const state = this.session.getRsmemSessionState?.();
+			if (!state) throw new Error("RS-Mem-One backend is not initialised for this session.");
+			const storedIds: string[] = [];
+			for (const [index, item] of params.items.entries()) {
+				try {
+					const result = await state.record(item.content, {
+						context: item.context,
+						source: "coding-agent-retain",
+					});
+					if (result.node_id) storedIds.push(result.node_id);
+				} catch (error) {
+					const reason = error instanceof Error ? error.message : String(error);
+					const kept =
+						storedIds.length === 0
+							? "Nothing was stored."
+							: `Stored before the failure and kept: ${storedIds.map((id, storedIndex) => `item ${storedIndex + 1} (id ${id})`).join(", ")}.`;
+					const untried = index + 1 < params.items.length ? " Later items were not attempted." : "";
+					throw new Error(
+						`RS-Mem-One did not store item ${index + 1} of ${params.items.length}: ${reason}. ${kept}${untried}`,
+						{ cause: error },
+					);
+				}
+			}
+			const count = params.items.length;
+			const noun = count === 1 ? "memory" : "memories";
+			return {
+				content: [{ type: "text", text: `${count} ${noun} stored.` }],
+				details: { count },
+			};
+		}
 		if (backend === "mnemopi") {
 			const state = this.session.getMnemopiSessionState?.();
 			if (!state) {

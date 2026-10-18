@@ -21,9 +21,12 @@ import { cfgMemoryBackend } from "./settings";
  */
 export async function resolveMemoryBackend(settings: Settings): Promise<MemoryBackend> {
 	const id = cfgMemoryBackend.get(settings);
+	// Lazy on purpose: each backend owns a heavy dependency graph, and only the
+	// selected one should enter the CLI's startup module graph.
 	if (id === "hindsight") return (await import("../hindsight/backend")).hindsightBackend;
 	if (id === "mnemopi") return (await import("../mnemopi/backend")).mnemopiBackend;
 	if (id === "sharpshooter") return (await import("../sharpshooter/backend")).sharpshooterBackend;
+	if (id === "rs-mem-one") return (await import("../rsmem/backend")).rsmemBackend;
 	if (id === "local") return localBackend;
 	return offBackend;
 }

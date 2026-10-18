@@ -2971,6 +2971,12 @@ export class Settings {
 			delete raw.mnemosyne;
 		}
 
+		// The Rust memory CLI was renamed from jev-mem-cli to rs-mem-one.
+		// Accept the old backend spellings once so existing configs keep working.
+		if (memoryBackendObj && (memoryBackendObj.backend === "jev" || memoryBackendObj.backend === "rsmem")) {
+			memoryBackendObj.backend = "rs-mem-one";
+		}
+
 		// hindsight: dynamicBankId/agentName -> scoping enum + bankId
 		// - dynamicBankId=true  → scoping="per-project" (closest semantic match;
 		//   the legacy `agent::project::channel::user` tuple was per-project in

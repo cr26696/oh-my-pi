@@ -13,13 +13,13 @@ export const cfgMemoryBackend = register({
 	id: "memory.backend",
 	protocolDefault: ["rpc", "acp"],
 	type: "enum",
-	values: ["off", "local", "hindsight", "mnemopi", "sharpshooter"] as const,
+	values: ["off", "local", "hindsight", "mnemopi", "sharpshooter", "rs-mem-one"] as const,
 	default: "off",
 	ui: {
 		tab: "memory",
 		group: "General",
 		label: "Memory Backend",
-		description: "Off, local summary pipeline, Mnemopi SQLite, Hindsight remote memory, or Sharpshooter",
+		description: "Off, local summary pipeline, Mnemopi SQLite, Hindsight remote memory, Sharpshooter, or RS-Mem-One",
 		options: [
 			{ value: "off", label: "Off", description: "No memory subsystem runs" },
 			{ value: "local", label: "Local", description: "Local rollout summarisation pipeline (memory_summary.md)" },
@@ -34,6 +34,11 @@ export const cfgMemoryBackend = register({
 				label: "Sharpshooter",
 				description:
 					"Friction-gated project decision files (architecture/product/style), consolidated in the background",
+			},
+			{
+				value: "rs-mem-one",
+				label: "RS-Mem-One",
+				description: "Local SQLite TRG knowledge graph served by the rs-mem-one CLI",
 			},
 		],
 	},

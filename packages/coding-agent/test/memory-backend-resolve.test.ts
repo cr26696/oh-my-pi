@@ -18,6 +18,18 @@ describe("resolveMemoryBackend", () => {
 		expect((await resolveMemoryBackend(b)).id).toBe("hindsight");
 	});
 
+	it("resolves the renamed rs-mem-one backend", async () => {
+		const settings = Settings.isolated({
+			"memory.backend": "rs-mem-one",
+			"rs-mem-one.bin": "rs-mem-one",
+			"rs-mem-one.maxEvidence": 4,
+		});
+		const backend = await resolveMemoryBackend(settings);
+		expect(backend.id).toBe("rs-mem-one");
+		expect(backend.buildDeveloperInstructions).toBeFunction();
+		expect(backend.beforeAgentStartPrompt).toBeFunction();
+	});
+
 	it("exposes inactive status when no session is available", async () => {
 		const memory = createMemoryRuntimeContext({ agentDir: "/tmp/agent", cwd: "/tmp/project" });
 
